@@ -74,7 +74,7 @@ public class ExpireServiceBean implements ExpireService, Callable {
         long days= TimeUnit.DAYS.convert(diff,TimeUnit.MILLISECONDS);
         long validityDaysLong=validityDays;
 
-        return (days>validityDays);
+        return (days>=validityDays);
 
     }
 
