@@ -32,7 +32,7 @@ There are four properties to configure:
 
 * *usePswdHistory*: boolean value, `true` if you want to enable password history. Setting it to `false` will not delete already stored passwords, but no new password will be logged from that moment on. Since the password log is also the source of the "last password change" date, this property must be `true` for password expiration to work.
 
-* *pswdHistoryLength*: size of the password log kept in the database for each user. The log follows a FIFO rule: once a new password is stored, the oldest record is hard deleted. Note that the new record is counted before the pruning takes place, so the log stabilizes at `pswdHistoryLength - 1` records; with `pswdHistoryLength=10`, a new password is validated against the last 9 used passwords for that user.
+* *pswdHistoryLength*: number of used passwords that will be stored in the database for a each user. For instance, if `pswdHistoryLength=10` the component will validate a new password against the last 10 used passwords for that user. The password log follows a FIFO rule: once a new password is stored in the log, every password beyond the last `pswdHistoryLength` ones is hard deleted. If the value is decreased, the new length is applied to the validation right away, and the exceeding passwords of each user are deleted the next time that user changes the password.
 
 * *usePswdExpiration*: boolean value, `true` if you want to enable password expiration. It has no effect unless *usePswdHistory* is also `true`.
 
@@ -91,7 +91,7 @@ At this version, only English and Spanish messages are supported.
 At this version, MySQL and MS SQL Server are supported out of the box. Scripts for any other database engine should be created by the user.
 
 ## Log table
-The last n passwords are stored in a table named `PSWDPLUS_PASSWORD_HISTORY`. As said before, there is no need to maintain the table, since it follows a FIFO rule. Once a new record for a user is created, the component deletes the oldest one.
+The last n passwords are stored in a table named `PSWDPLUS_PASSWORD_HISTORY`. As said before, there is no need to maintain the table, since it follows a FIFO rule. Whenever a new record for a user is created, the component deletes every record of that user beyond the last n ones.
 
 Each record keeps the password that has just been replaced, in `PASSWORD_HASH`, and the date of the change, in `CREATED_AT`. Records are only created while *usePswdHistory* is `true`, and the most recent `CREATED_AT` of a user is what the expiration process reads as their last password change, so the table should not be truncated while password expiration is in use.
 

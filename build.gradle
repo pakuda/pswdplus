@@ -58,6 +58,7 @@ dependencies {
 }
 
 def mysql = 'mysql:mysql-connector-java:5.1.46'
+def hsql = 'org.hsqldb:hsqldb:2.4.1'
 
 configure([globalModule, coreModule, webModule]) {
     apply(plugin: 'java')
@@ -106,6 +107,8 @@ configure(coreModule) {
     configurations {
         jdbc
         dbscripts
+        //HSQLDB driver for the test database only, kept apart from jdbc (deployed into Tomcat)
+        testJdbc
     }
 
     dependencies {
@@ -113,6 +116,8 @@ configure(coreModule) {
         compileOnly(servletApi)
         jdbc(mysql)
         testRuntime(mysql)
+        testRuntime(hsql)
+        testJdbc(hsql)
 
     }
 
@@ -141,6 +146,55 @@ configure(coreModule) {
         dbUser = 'root'
         dbPassword = 'kawasaki'
         connectionParams = '?useSSL=false&allowMultiQueries=true'
+    }
+
+    //test database: a local HSQLDB server, recreated on every test run
+    //(connection settings must match PswdplusTestContainer)
+    def testDbName = 'pswdplus_test'
+    def testDbPort = 9111
+    def isTestDbRunning = {
+        def socket = new Socket()
+        try { socket.connect(new InetSocketAddress('localhost', testDbPort), 500); true }
+        catch (IOException ignored) { false }
+        finally { socket.close() }
+    }
+
+    //stops a server left running by an interrupted build
+    task stopStaleTestDb(type: CubaHsqlStop) {
+        dbName = testDbName
+        dbPort = testDbPort
+        onlyIf { isTestDbRunning() }
+        doFirst { driverClasspath = configurations.testJdbc.asPath }
+    }
+
+    task startTestDb(dependsOn: stopStaleTestDb, description: 'Starts local HSQLDB server for tests', type: CubaHsqlStart) {
+        dbName = testDbName
+        dbPort = testDbPort
+        dbDataDir = file("$buildDir/hsqldb")
+        showUi = false
+        doFirst { driverClasspath = configurations.testJdbc.asPath }
+        //stop the server even if a later task (e.g. test compilation) fails
+        finalizedBy 'stopTestDb'
+    }
+
+    task stopTestDb(description: 'Stops local HSQLDB server for tests', type: CubaHsqlStop) {
+        dbName = testDbName
+        dbPort = testDbPort
+        doFirst { driverClasspath = configurations.testJdbc.asPath }
+        mustRunAfter 'test'
+    }
+
+    task createTestDb(dependsOn: [assembleDbScripts, startTestDb], description: 'Creates local HSQLDB database for tests', type: CubaDbCreation) {
+        dbms = 'hsql'
+        host = "localhost:$testDbPort"
+        dbName = testDbName
+        dbUser = 'sa'
+        dbPassword = ''
+        doFirst { driverClasspath = configurations.testJdbc.asPath }
+    }
+
+    test {
+        dependsOn createTestDb
     }
 }
 
