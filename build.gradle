@@ -41,7 +41,7 @@ apply(plugin: 'cuba')
 cuba {
     artifact {
         group = 'ar.com.osmosys.pswdplus'
-        version = '1.2.1'
+        version = '1.2.2'
         isSnapshot = false
     }
     tomcat {
