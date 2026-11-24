@@ -3,14 +3,14 @@
 
 
 ## What is this component for ? 
-**cuba-pswdplus** is a CUBA Platform component that provides "out of the box" password history validation to an existing application. It allows the app administrator to activate and configure the validation.  
+**cuba-pswdplus** is a CUBA Platform component that provides "out of the box" password history validation and password expiration to an existing application. It allows the app administrator to activate and configure both features, so a CUBA application can be deployed in corporate environments with strict password requirements.
 
-A coming version will add support for password expiration and thus, it will allow a CUBA application to be deployed in corporate environments with strict password requirements.
+Both features are built on top of the same password log table: the history validation compares new passwords against the stored hashes, and the expiration process uses the date of the most recent log record as the "last password change" date. **This means password expiration requires password history to be enabled** — see [Password expiration](#password-expiration) below.
 
 
 ## Installation
 1. `cuba-pswdplus` is available in the [CUBA marketplace](https://www.cuba-platform.com/marketplace)
-2. The component was tested only in platform version 6.10.x
+2. This version was built and tested against platform version 7.2.x
 
 The latest version is:[ ![Download](https://api.bintray.com/packages/arapoport/main/cuba-pswdplus/images/download.svg?version=1.0.3) ](https://bintray.com/arapoport/main/cuba-pswdplus/_latestVersion)
 
@@ -28,11 +28,56 @@ Once you've installed the component and run your app for the first time, open th
 
 ![Screenshot Application Properties](https://github.com/pakuda/pswdplus/blob/master/img/appProperties.png)
 
-There are two properties to configure:
+There are four properties to configure:
 
-* *usePswdHistory*: boolean value, `true` if you want to enable password history. Setting it to `false` will not delete already stored passwords.
+* *usePswdHistory*: boolean value, `true` if you want to enable password history. Setting it to `false` will not delete already stored passwords, but no new password will be logged from that moment on. Since the password log is also the source of the "last password change" date, this property must be `true` for password expiration to work.
 
 * *pswdHistoryLength*: number of used passwords that will be stored in the database for a each user. For instance, if `pswdHistoryLength=10` the component will validate a new password against the last 10 used passwords for that user. The password log follows a FIFO rule: once a new password is stored in the log, every password beyond the last `pswdHistoryLength` ones is hard deleted. If the value is decreased, the new length is applied to the validation right away, and the exceeding passwords of each user are deleted the next time that user changes the password.
+
+* *usePswdExpiration*: boolean value, `true` if you want to enable password expiration. It has no effect unless *usePswdHistory* is also `true`.
+
+* *daysToPswdExpiration*: password validity, expressed in days. See [Password expiration](#password-expiration) for the exact meaning.
+
+## Password expiration
+
+Expiration is not evaluated at login time. It is performed by the `pswdplus_ExpireService` service, which the application administrator must invoke from a CUBA scheduled task:
+
+* Bean name: `pswdplus_ExpireService`
+* Method name: `expireOldPasswords`
+* Recommended period: once a day, outside business hours
+
+On each run, the service goes through all the users that are **not** already flagged with *Change password at next logon*, reads the date of their most recent password log record, and — if the password is expired — sets the *Change password at next logon* flag. The user keeps working with the current password until their next login, at which point CUBA forces the password change. The service returns the comma-separated list of the logins it has flagged.
+
+### How the validity period is counted
+
+The service compares the run timestamp against the last password change using **whole elapsed days**, and flags the password when the elapsed days are **greater than** `daysToPswdExpiration`. In practice a password becomes expired once `daysToPswdExpiration + 1` full days (24 h periods) have elapsed since it was set.
+
+For example, with `daysToPswdExpiration=1` and the scheduled task running on 31/07 at 12:00:
+
+| Last password change | Elapsed | Flagged on this run ? |
+|---|---|---|
+| 30/07 11:00 | 25 h | no |
+| 29/07 13:00 | 47 h | no |
+| 29/07 12:00 | 48 h | yes |
+| 28/07 or earlier | more than 48 h | yes |
+
+Because the flag is only applied when the scheduled task runs, the effective moment of expiration also depends on how often the task is scheduled. With a daily task, a password is forced to be changed at the first run that takes place after `daysToPswdExpiration + 1` full days.
+
+### Users without a password log record
+
+A user with no record in the password log has no "last password change" date, and is therefore never flagged as expired. This is the case for users created before the component was installed, and for users whose password was only changed while *usePswdHistory* was `false`.
+
+When enabling expiration on an existing application, insert one record per user in `PSWDPLUS_PASSWORD_HISTORY` so that the validity period starts at the same date for everybody, instead of forcing a password change on the first run of the scheduled task. The date read by the service is the `CREATED_AT` column (not `CREATE_TS`), and storing the current password hash adds no restriction, since the current password is already rejected by the change password dialog. For MySQL:
+
+```sql
+insert into PSWDPLUS_PASSWORD_HISTORY
+    (ID, VERSION, CREATE_TS, CREATED_BY, USER_ID, CREATED_AT, PASSWORD_HASH)
+select replace(uuid(), '-', ''), 1, now(), 'admin', u.ID, now(), u.PASSWORD
+from SEC_USER u
+where u.DELETE_TS is null
+  and not exists (select 1 from PSWDPLUS_PASSWORD_HISTORY ph
+                  where ph.USER_ID = u.ID and ph.DELETE_TS is null);
+```
 
 ## In Action
 The validation is performed when the user changes his password himself or it is changed by the admin. If the entered new password is already in the password history log, then an alert is shown on the screen.
@@ -43,10 +88,12 @@ The validation is performed when the user changes his password himself or it is 
 At this version, only English and Spanish messages are supported.
 
 ## Database support
-At this version, only MySQL database is supported out of the box. Scripts for any other database engine should be created by the user.
+At this version, MySQL and MS SQL Server are supported out of the box. Scripts for any other database engine should be created by the user.
 
 ## Log table
 The last n passwords are stored in a table named `PSWDPLUS_PASSWORD_HISTORY`. As said before, there is no need to maintain the table, since it follows a FIFO rule. Whenever a new record for a user is created, the component deletes every record of that user beyond the last n ones.
+
+Each record keeps the password that has just been replaced, in `PASSWORD_HASH`, and the date of the change, in `CREATED_AT`. Records are only created while *usePswdHistory* is `true`, and the most recent `CREATED_AT` of a user is what the expiration process reads as their last password change, so the table should not be truncated while password expiration is in use.
 
 
 
