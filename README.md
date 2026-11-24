@@ -32,7 +32,7 @@ There are two properties to configure:
 
 * *usePswdHistory*: boolean value, `true` if you want to enable password history. Setting it to `false` will not delete already stored passwords.
 
-* *pswdHistoryLength*: number of used passwords that will be stored in the database for a each user. For instance, if `pswdHistoryLength=10` the component will validate a new password against the last 10 used passwords for that user. The password log follows a FIFO rule, once a new password is stored in the log, the oldest is hard deleted.
+* *pswdHistoryLength*: number of used passwords that will be stored in the database for a each user. For instance, if `pswdHistoryLength=10` the component will validate a new password against the last 10 used passwords for that user. The password log follows a FIFO rule: once a new password is stored in the log, every password beyond the last `pswdHistoryLength` ones is hard deleted. If the value is decreased, the new length is applied to the validation right away, and the exceeding passwords of each user are deleted the next time that user changes the password.
 
 ## In Action
 The validation is performed when the user changes his password himself or it is changed by the admin. If the entered new password is already in the password history log, then an alert is shown on the screen.
@@ -46,7 +46,7 @@ At this version, only English and Spanish messages are supported.
 At this version, only MySQL database is supported out of the box. Scripts for any other database engine should be created by the user.
 
 ## Log table
-The last n passwords are stored in a table named `PSWDPLUS_PASSWORD_HISTORY`. As said before, there is no need to maintain the table, since it follows a FIFO rule. Once a new record for a user is created, the component deletes the oldest one.
+The last n passwords are stored in a table named `PSWDPLUS_PASSWORD_HISTORY`. As said before, there is no need to maintain the table, since it follows a FIFO rule. Whenever a new record for a user is created, the component deletes every record of that user beyond the last n ones.
 
 
 
